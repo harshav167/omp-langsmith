@@ -23,14 +23,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v4
-
+      # changesets publishes through npm, which setup-node provides along with
+      # registry auth; dependencies and scripts run on Bun.
       - name: Setup Node.js 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: 24.x
-          cache: "pnpm"
           registry-url: "https://registry.npmjs.org"
 
       - name: Install Bun
@@ -39,10 +37,10 @@ jobs:
           bun-version: 1.4.4
 
       - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Lint
-        run: pnpm run lint
+        run: bun run lint
 
       - name: Test
         run: bun test
@@ -51,8 +49,8 @@ jobs:
         id: changesets
         uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v1
         with:
-          publish-script: pnpm release
-          version-script: pnpm changeset version
+          publish-script: bun run release
+          version-script: bun run version-packages
           commit-message: "chore: version packages"
           pr-title: "chore: version packages"
         env:

@@ -4,13 +4,13 @@ Thanks for helping improve `@langchain/langsmith-pi-extension`, the LangSmith tr
 
 ## Development Setup
 
-Dependencies are managed with pnpm; tests run on Bun, the runtime omp loads plugins with.
+Dependencies, scripts and tests all run on Bun, the runtime omp loads plugins with.
 
 ```sh
-pnpm install
+bun install
 bun test            # test suite
-pnpm run lint       # oxfmt check + tsc
-pnpm run format     # format files
+bun run lint        # oxfmt check + tsc
+bun run format      # format files
 ```
 
 There is no build step: omp loads `src/index.ts` directly, and the package publishes `src/`.
@@ -73,7 +73,7 @@ it("my scenario", async () => {
 
 ## Changesets
 
-User-facing package changes should include a changeset (`pnpm run changeset`):
+User-facing package changes should include a changeset (`bun run changeset`):
 
 - `patch` for bug fixes and internal improvements.
 - `minor` for backward-compatible features.
@@ -93,7 +93,7 @@ LANGSMITH_PI_API_KEY=<your-langsmith-api-key>
 ## Pull Request Checklist
 
 - Tests cover the changed behavior, or the PR explains why tests are not needed.
-- `pnpm run lint` and `bun test` pass locally.
+- `bun run lint` and `bun test` pass locally.
 - User-facing changes are reflected in `README.md`.
 - A changeset is included for package behavior changes.
 - No secrets or local-only configuration files are committed.
