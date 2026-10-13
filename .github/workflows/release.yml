@@ -33,14 +33,19 @@ jobs:
           cache: "pnpm"
           registry-url: "https://registry.npmjs.org"
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm run build
+      - name: Lint
+        run: pnpm run lint
 
       - name: Test
-        run: pnpm test
+        run: bun test
 
       - name: Create Release Pull Request or Publish to npm
         id: changesets

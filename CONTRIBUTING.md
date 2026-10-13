@@ -1,108 +1,79 @@
 # Contributing
 
-Thanks for helping improve `@langchain/langsmith-pi-extension`. This project is a TypeScript package for tracing Pi Coding Agent sessions to LangSmith.
+Thanks for helping improve `@langchain/langsmith-pi-extension`, the LangSmith tracing plugin for oh-my-pi (omp).
 
 ## Development Setup
 
-Install dependencies with the pinned package manager:
+Dependencies are managed with pnpm; tests run on Bun, the runtime omp loads plugins with.
 
 ```sh
 pnpm install
+bun test            # test suite
+pnpm run lint       # oxfmt check + tsc
+pnpm run format     # format files
 ```
 
-Build the package:
+There is no build step: omp loads `src/index.ts` directly, and the package publishes `src/`.
+
+To try changes in a real session, link the checkout as a plugin (uninstall an npm copy first so the plugin does not load twice), then start a new omp session:
 
 ```sh
-pnpm run build
+omp plugin uninstall @langchain/langsmith-pi-extension
+omp plugin link .
 ```
 
-Run the test suite:
+For a one-off run that loads only this checkout:
 
 ```sh
-pnpm test
-```
-
-Run formatting and type checks:
-
-```sh
-pnpm run lint
-```
-
-Format files:
-
-```sh
-pnpm run format
+omp --no-extensions -e src/index.ts -p "your prompt"
 ```
 
 ## Project Layout
 
-- `src/` contains the extension implementation.
-- `test/` contains Vitest tests, fixtures, and replay utilities.
-- `dist/` is generated build output.
-- `README.md` documents user-facing installation and configuration.
+- `src/index.ts` — extension factory, options, shared LangSmith clients.
+- `src/tracer.ts` — omp lifecycle event handlers and the run-tree state machine.
+- `src/convert.ts` — pure conversions: provider payloads, messages, usage, model parameters, redaction.
+- `src/config.ts`, `src/metadata.ts` — configuration discovery and the `coding-agent-v1` metadata contract.
+- `test/` — Bun tests, recordings and utilities.
 
 ## Making Changes
 
-Keep changes focused and consistent with the existing code style. Prefer small, direct changes over broad refactors unless the refactor is necessary for the feature or fix.
+Handlers in `src/tracer.ts` must stay synchronous with respect to tracing state: omp dispatches events concurrently, so a handler that awaits and then reads shared state can see another prompt's state. Network I/O goes through `RunExporter`, which orders each run's post and patch without blocking handlers.
 
-When changing tracing behavior, configuration parsing, or run serialization, add or update tests that cover the observable behavior. Replay-based tests should use fixtures under `test/recordings/` and utilities under `test/utils/`.
+When changing tracing behavior, configuration parsing, or run serialization, add or update tests that assert the exported run tree. `test/lifecycle.test.ts` drives omp-shaped event sequences through a fake host (`test/utils/harness.ts`); `test/replay.test.ts` replays real recordings.
 
-## Record and Replay Tests
+## Record and Replay
 
-Use record and replay when iterating on tracing behavior that depends on real Pi event sequences. The recorder captures a single real agent session once, then replay lets you run that same event stream repeatedly without spending more LLM tokens.
+To capture a real event stream, load the recorder next to (or instead of) the plugin; events append to `langsmith.jsonl` at the repo root:
 
-To record a session, temporarily run the recorder extension in `test/utils/record.ts` instead of the LangSmith extension.
-
-```shell
-pi -e test/utils/record.ts
+```sh
+omp --no-extensions -e test/utils/record.ts -p "your prompt"
 ```
 
-Before committing a recording, inspect it for secrets, local paths, prompts, user identifiers, and API keys. Keep the shortest recording that exercises the behavior under test.
+Before committing a recording under `test/recordings/`, inspect it for secrets, local paths, prompts, user identifiers, and API keys. Keep the shortest recording that exercises the behavior.
 
-To replay a recording in a test, call `replayExtension` with the real extension and a mocked LangSmith client:
+Replay it with `replay` and a mocked client, then assert on the tree:
 
 ```ts
-import { expect, it } from "vitest";
-import * as fs from "node:fs";
-import extension from "../src/index";
-import { replayExtension } from "./utils/replay";
+import { expect, it } from "bun:test";
+import extension, { flushTraces } from "../src/index";
 import { mockClient } from "./utils/mock_client";
+import { parseRecording, replay } from "./utils/replay";
+import { getAssumedTreeFromCalls } from "./utils/tree";
 
 it("my scenario", async () => {
   const { client, callSpy } = mockClient();
-
-  await replayExtension(
-    (pi) => extension(pi, { client }),
-    await fs.promises.readFile(new URL("./recordings/my-scenario.jsonl", import.meta.url), "utf-8"),
-  );
-
-  await client.awaitPendingTraceBatches();
-
-  expect(callSpy).toHaveBeenCalled();
+  const events = parseRecording(await Bun.file("test/recordings/my-scenario.jsonl").text());
+  await replay((session) => extension(session.pi, { client, config: { enabled: true } }), events);
+  await flushTraces();
+  const tree = await getAssumedTreeFromCalls(callSpy.mock.calls, client);
+  expect(tree.nodes.some((node) => node.startsWith("omp-agent:"))).toBe(true);
 });
-```
-
-For durable integration tests, assert on the run tree shape rather than only checking that calls happened. See `test/trace.test.ts` for examples using `getAssumedTreeFromCalls` and `asTree`.
-
-`test/replay.test.ts` is intentionally skipped and useful for manual debugging against a real LangSmith client. Enable it locally only when you want to send a recorded event stream to LangSmith and inspect the trace output.
-
-Before opening a pull request, run:
-
-```sh
-pnpm run lint
-pnpm test
-pnpm run build
 ```
 
 ## Changesets
 
-User-facing package changes should include a changeset:
-
-```sh
-pnpm run changeset
-```
-
-Choose the version bump that matches the impact of the change:
+User-facing package changes should include a changeset (`pnpm run changeset`):
 
 - `patch` for bug fixes and internal improvements.
 - `minor` for backward-compatible features.
@@ -112,19 +83,17 @@ Documentation-only changes generally do not need a changeset.
 
 ## Secrets and Local Configuration
 
-Do not commit LangSmith API keys, `.env` files, or local Pi configuration files. Use environment variables or local config files only for manual testing:
+Do not commit LangSmith API keys, `.env` files, or local omp configuration. For manual testing, put credentials in your omp agent directory's `.env`:
 
 ```sh
-export TRACE_TO_LANGSMITH=true
-export LANGSMITH_PI_API_KEY="<your-langsmith-api-key>"
+TRACE_TO_LANGSMITH=true
+LANGSMITH_PI_API_KEY=<your-langsmith-api-key>
 ```
-
-If you need to add a fixture that resembles a real trace, scrub tokens, API keys, user identifiers, and sensitive metadata before committing it.
 
 ## Pull Request Checklist
 
 - Tests cover the changed behavior, or the PR explains why tests are not needed.
-- `pnpm run lint`, `pnpm test`, and `pnpm run build` pass locally.
-- User-facing changes are reflected in `README.md` when needed.
+- `pnpm run lint` and `bun test` pass locally.
+- User-facing changes are reflected in `README.md`.
 - A changeset is included for package behavior changes.
 - No secrets or local-only configuration files are committed.

@@ -1,62 +1,50 @@
-import { vi } from "vitest";
-import { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createFakeSession, type FakeSession, type FakeSessionOptions } from "./harness";
 
-export async function replayExtension(
-  init: (api: ExtensionAPI) => Promise<void>,
-  contents: string,
-  options?: { wait?: boolean },
-) {
-  const events = contents
-    .trim()
-    .split("\n")
-    .map(
-      (line) =>
-        JSON.parse(line) as [
-          currTime: number,
-          eventName: string,
-          arg: unknown,
-          ctx: Record<string, unknown>,
-        ],
-    );
+export type RecordedEvent = [
+  time: number,
+  name: string,
+  event: Record<string, unknown>,
+  ctx: Record<string, unknown>,
+];
 
-  const handlers: Record<
-    string,
-    Array<(arg: unknown, context: ExtensionContext) => Promise<void>>
-  > = {};
+export const parseRecording = (contents: string): RecordedEvent[] =>
+  contents
+    .split(/\r?\n/)
+    .map((line, index) => [line.trim(), index + 1] as const)
+    .filter(([line]) => line !== "")
+    .map(([line, lineNumber]) => {
+      try {
+        return JSON.parse(line) as RecordedEvent;
+      } catch (error) {
+        throw new Error(`Invalid recording line ${lineNumber}: ${(error as Error).message}`);
+      }
+    });
 
-  const pi = {
-    on: (
-      eventName: string,
-      handler: (arg: unknown, context: ExtensionContext) => Promise<void>,
-    ) => {
-      handlers[eventName] ??= [];
-      handlers[eventName].push(handler);
-    },
-    registerCommand: (...args: unknown[]) => vi.fn(),
-  } as unknown as ExtensionAPI;
-
-  await init(pi);
-
-  // Invoke events from replay
-  let lastTime: number | undefined = undefined;
-  for (const [currTime, eventName, arg, ctx] of events) {
-    let wait = lastTime !== undefined ? Math.max(0, currTime - lastTime) : 0;
-    if (eventName === "session_shutdown") wait = 0; // Don't wait after shutdown event
-
-    if (wait > 0 && options?.wait) {
-      await new Promise((resolve) => setTimeout(resolve, wait));
+/**
+ * Replays a recording (written by `test/utils/record.ts`) into a fake OMP host.
+ * Each event runs with the context the recording captured (model, cwd, agent
+ * identity, context usage), so provider-specific run names, payloads, agent
+ * nesting and the final usage match the real session.
+ */
+export async function replay(
+  init: (session: FakeSession) => Promise<void>,
+  events: RecordedEvent[],
+  options: FakeSessionOptions = {},
+): Promise<FakeSession> {
+  const session = createFakeSession(options);
+  await init(session);
+  for (const [, name, event, recordedCtx] of events) {
+    for (const key of ["model", "cwd", "agent"] as const) {
+      if (recordedCtx[key] !== undefined) Object.assign(session.ctx, { [key]: recordedCtx[key] });
     }
-
-    for (const handler of handlers[eventName] ?? []) {
-      const context = {
-        ui: { setStatus: vi.fn() },
-        ...ctx,
-        getContextUsage: () => ctx?.getContextUsage,
-      } as unknown as ExtensionContext;
-
-      await handler(arg, context);
+    if (recordedCtx.getContextUsage !== undefined) {
+      const usage = recordedCtx.getContextUsage;
+      Object.assign(session.ctx, { getContextUsage: () => usage });
     }
-
-    lastTime = currTime;
+    if (name === "before_agent_start" && typeof event.prompt === "string") {
+      session.entries.push({ type: "message", message: { role: "user", content: event.prompt } });
+    }
+    await session.fire(name, event);
   }
+  return session;
 }

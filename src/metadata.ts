@@ -1,16 +1,17 @@
 import * as os from "node:os";
 import { execFileSync } from "node:child_process";
 
-import { VERSION as PI_RUNTIME_VERSION } from "@earendil-works/pi-coding-agent";
+import pkg from "../package.json" with { type: "json" };
 
-import { INTEGRATION_VERSION } from "./version.js";
-
-// ── Frozen coding-agent-v1 literals for the pi integration ───────────────────
+// ── Frozen coding-agent-v1 literals ──────────────────────────────────────────
+// LangSmith registers this extension under the `pi` integration id (see the
+// coding-agent metadata contract); the runtime fields say which fork runs it.
 export const LS_AGENT_PURPOSE = "coding";
 export type LSAgentType = "root" | "subagent" | "middleware" | "compaction";
 export const LS_INTEGRATION = "pi";
-export const LS_AGENT_RUNTIME = "Pi";
+export const LS_AGENT_RUNTIME = "omp";
 export const LS_TRACE_SCHEMA_VERSION = "coding-agent-v1";
+export const INTEGRATION_VERSION = pkg.version;
 
 interface GitInfo {
   repository_url?: string;
@@ -113,6 +114,8 @@ export interface CodingAgentMetadataInput {
   cwd: string;
   /** 1-based USER-turn index (one per user prompt / root run). */
   turnNumber?: number;
+  /** Host OMP version (`pi.pi.VERSION`). */
+  runtimeVersion?: string;
 }
 
 /**
@@ -133,7 +136,7 @@ export function codingAgentMetadata(input: CodingAgentMetadataInput): Record<str
 
     // Versions — where known.
     ls_integration_version: INTEGRATION_VERSION,
-    ls_agent_runtime_version: PI_RUNTIME_VERSION,
+    ls_agent_runtime_version: input.runtimeVersion,
 
     // User turn — 1-based, set on the root and propagated to descendants.
     turn_number: input.turnNumber,
@@ -146,7 +149,7 @@ export function codingAgentMetadata(input: CodingAgentMetadataInput): Record<str
     git_commit_sha: git.git_commit_sha,
     cwd: input.cwd,
 
-    // Attribution — contextual. pi exposes no stable user_id / user_email.
+    // Attribution — contextual. omp exposes no stable user_id / user_email.
     local_username: localUsername(),
   });
 }

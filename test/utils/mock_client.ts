@@ -1,25 +1,19 @@
-import { vi } from "vitest";
-import { Client } from "langsmith";
+import { mock } from "bun:test";
+import { Client, type ClientConfig } from "langsmith";
 
-type ClientParams = Exclude<ConstructorParameters<typeof Client>[0], undefined>;
-export const mockClient = (config?: Omit<ClientParams, "autoBatchTracing">) => {
-  const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
-    ok: true,
-    status: 200,
-    statusText: "OK",
-    text: () => Promise.resolve(""),
-    json: () => Promise.resolve({}),
-  } as Response);
-
+/** A LangSmith client whose HTTP layer records every request instead of sending it. */
+export const mockClient = (config?: Omit<ClientConfig, "autoBatchTracing">) => {
+  const callSpy = mock(
+    async (_url: string | URL | Request, _init?: RequestInit) =>
+      new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+  );
+  // Bun's `typeof fetch` also carries `preconnect`; the client only ever calls it.
+  const fetchImplementation = callSpy as unknown as typeof fetch;
   const client = new Client({
+    apiKey: "test-api-key",
     ...config,
-    // apiKey: "MOCK",
     autoBatchTracing: false,
-    fetchImplementation: mockFetch,
+    fetchImplementation,
   });
-
-  const callSpy = mockFetch;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { client, callSpy: callSpy as any };
+  return { client, callSpy };
 };

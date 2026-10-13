@@ -1,5 +1,4 @@
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
 import * as path from "node:path";
 
 import { z } from "zod";
@@ -67,7 +66,7 @@ function parseJson(value: unknown): Record<string, unknown> | undefined {
   if (value.trim().length === 0) return undefined;
   try {
     return JSON.parse(value);
-  } catch (error) {
+  } catch {
     return undefined;
   }
 }
@@ -106,28 +105,33 @@ const readConfigEnv = (env: Record<string, string | undefined>): Partial<Config>
   );
 };
 
-const getHomeDir = () => process.env.HOME ?? os.homedir();
-
-export async function getConfig(options?: {
-  home: string;
+/**
+ * Resolves the extension config. Later sources win:
+ *
+ * 1. defaults (disabled, project `pi-coding-agent`)
+ * 2. `<agentDir>/langsmith.json` — the active OMP profile's agent directory
+ * 3. `<cwd>/.omp/langsmith.json` — project override of `enabled`, `project` and
+ *    `metadata` only. A checked-out repository must not be able to point this
+ *    process's prompts, tool output and file contents at a destination it chose.
+ * 4. environment, including the `.env` OMP loads from the agent directory
+ */
+export async function getConfig(options: {
+  agentDir: string | undefined;
   cwd: string;
   env: Record<string, string | undefined>;
-}) {
-  const home = options?.home ?? getHomeDir();
-  const cwd = options?.cwd ?? process.cwd();
-  const env = options?.env ?? process.env;
-
-  const envConfig = readConfigEnv(env);
+}): Promise<Config> {
+  const envConfig = readConfigEnv(options.env);
   const [globalConfig, localConfig] = await Promise.all([
-    readConfigFile(path.join(home, ".pi", "langsmith.json")),
-    readConfigFile(path.join(cwd, ".pi", "langsmith.json")),
+    options.agentDir ? readConfigFile(path.join(options.agentDir, "langsmith.json")) : undefined,
+    readConfigFile(path.join(options.cwd, ".omp", "langsmith.json")),
   ]);
+  const { api_key: _key, api_url: _url, replicas: _replicas, ...projectConfig } = localConfig ?? {};
 
   return ConfigSchema.parse({
     project: DEFAULT_PROJECT,
     enabled: false,
     ...globalConfig,
-    ...localConfig,
+    ...projectConfig,
     ...envConfig,
   });
 }

@@ -1,12 +1,16 @@
 {
   "name": "@langchain/langsmith-pi-extension",
   "version": "0.2.1",
-  "description": "LangSmith extension for Pi Coding Agent",
+  "description": "LangSmith tracing plugin for oh-my-pi (omp): traces prompts, agent steps, LLM calls, tools, subagents, steering, retries and compaction to LangSmith",
   "keywords": [
     "coding-agent",
     "langsmith",
-    "pi",
-    "pi-package"
+    "observability",
+    "oh-my-pi",
+    "omp",
+    "omp-extension",
+    "omp-plugin",
+    "tracing"
   ],
   "license": "MIT",
   "author": "LangChain",
@@ -15,34 +19,27 @@
     "url": "https://github.com/langchain-ai/langsmith-pi-extension.git"
   },
   "files": [
-    "dist",
+    "src",
     "README.md"
   ],
   "type": "module",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
-    },
+    ".": "./src/index.ts",
     "./package.json": "./package.json"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "node scripts/inject-version.mjs && tsc",
-    "test": "vitest",
-    "pretest": "node scripts/inject-version.mjs",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
     "format": "oxfmt",
     "lint": "oxfmt --check && tsc --noEmit",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "pnpm run build && changeset publish",
-    "prepublish": "pnpm run build"
+    "release": "changeset publish"
   },
   "dependencies": {
     "langsmith": "^0.10.5",
@@ -51,12 +48,14 @@
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.0",
     "@changesets/cli": "^3.0.1",
-    "@earendil-works/pi-ai": "^0.87.1",
-    "@earendil-works/pi-coding-agent": "^0.87.1",
+    "@oh-my-pi/pi-coding-agent": "^18.8.9",
+    "@types/bun": "^1.4.2",
     "@types/node": "^26.1.2",
     "oxfmt": "^0.70.0",
-    "typescript": "^7.0.2",
-    "vitest": "^5.0.2"
+    "typescript": "^7.0.2"
+  },
+  "peerDependencies": {
+    "@oh-my-pi/pi-coding-agent": ">=18.7.0"
   },
   "packageManager": "pnpm@10.33.0",
   "pnpm": {
@@ -68,9 +67,9 @@
       "ws": "8.21.0"
     }
   },
-  "pi": {
+  "omp": {
     "extensions": [
-      "./dist/index.js"
+      "./src/index.ts"
     ]
   }
 }
